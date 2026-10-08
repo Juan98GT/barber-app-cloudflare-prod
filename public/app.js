@@ -1,8 +1,40 @@
-const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-v4-public-config-edge';
+const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-1-social';
+
+// ============================================================
+// REDES SOCIALES · PEGA AQUÍ LOS ENLACES DE FERNANDO
+// Ejemplo: facebook: 'https://www.facebook.com/usuario'
+// Deja un valor vacío ('') para mantener esa red deshabilitada.
+// ============================================================
+const SOCIAL_LINKS = Object.freeze({
+  facebook: 'https://www.facebook.com/share/1YviefD4vn/?mibextid=wwXIfr',
+  tiktok: 'https://www.tiktok.com/@fernandobarbergt?_r=1&_t=ZS-9ANQxmaP4Jb',
+  instagram: 'https://www.instagram.com/fernando_rd_21style?utm_source=qr'
+});
+
 const BARBER_DEBUG_FROM_URL = new URLSearchParams(window.location.search).get('debug') === '1';
 if (BARBER_DEBUG_FROM_URL) sessionStorage.setItem('barber_debug', '1');
 const BARBER_DEBUG_ENABLED = BARBER_DEBUG_FROM_URL || sessionStorage.getItem('barber_debug') === '1';
 window.__BARBER_DIAGNOSTIC_VERSION__ = BARBER_DIAGNOSTIC_VERSION;
+
+function initSocialLinks(){
+  document.querySelectorAll('[data-social]').forEach(link => {
+    const network = link.dataset.social;
+    const url = String(SOCIAL_LINKS[network] || '').trim();
+    if(url){
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.classList.remove('is-disabled');
+      link.removeAttribute('aria-disabled');
+    } else {
+      link.removeAttribute('href');
+      link.removeAttribute('target');
+      link.removeAttribute('rel');
+      link.classList.add('is-disabled');
+      link.setAttribute('aria-disabled','true');
+    }
+  });
+}
 
 function ensureTestTimingPanel(){
   if(!BARBER_DEBUG_ENABLED) return null;
@@ -243,6 +275,7 @@ let selectedTime = '';
 
   document.addEventListener('DOMContentLoaded', async () => {
     ensureTestTimingPanel();
+    initSocialLinks();
     document.getElementById('service').addEventListener('change', onServiceChange);
     document.getElementById('date').addEventListener('change', loadDateInfo);
     document.getElementById('phone').addEventListener('input', enforcePhoneDigits);

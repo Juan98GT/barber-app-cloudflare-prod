@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Fernando RD Barber | Reserva tu cita</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header id="floatingBrand" class="floating-brand" aria-hidden="true">
+    <div class="floating-brand-inner">
+      <div class="mini-logo"><img class="barber-logo" src="/logo.png" alt="Fernando RD Barber"></div>
+      <div class="floating-brand-copy">
+        <strong>Fernando RD Barber</strong>
+        <span>Reserva tu cita</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell public-shell">
+    <section class="hero logo-hero" id="mainHero">
+      <div class="logo-wrap"><img class="barber-logo" src="/logo.png" alt="Fernando RD Barber"></div>
+      <h2>Reserva tu cita</h2>
+    </section>
+
+    <section class="card" id="bookingCard">
+      <div id="bookingFormView">
+        <h3>Agenda tu cita</h3>
+        <p class="sub">Elige primero el tipo de corte. Los horarios se calculan según el tiempo requerido.</p>
+
+        <div class="field">
+          <label for="service">Tipo de corte</label>
+          <select id="service" disabled aria-describedby="serviceLoadStatus">
+            <option value="">Cargando servicios...</option>
+          </select>
+          <div id="serviceLoadStatus" class="service-load-status loading" role="status" aria-live="polite">
+            <span class="service-spinner" aria-hidden="true"></span>
+            <span>Cargando servicios...</span>
+          </div>
+        </div>
+        <div id="serviceDescription" class="service-description-card" style="display:none" aria-live="polite">
+          <span class="service-description-kicker">Descripción del servicio</span>
+          <strong id="serviceDescriptionTitle"></strong>
+          <p id="serviceDescriptionText"></p>
+        </div>
+
+        <div class="field" style="margin-top:16px">
+          <label for="date">Fecha</label>
+          <input id="date" type="date" autocomplete="off" disabled>
+          <div id="dateStatus" class="availability-note" aria-live="polite" aria-atomic="true"></div>
+        </div>
+
+        <div class="field" style="margin-top:16px">
+          <label>Horario disponible</label>
+          <div id="slots" class="slots">
+            <div class="empty" style="grid-column:1/-1">Selecciona un tipo de corte y una fecha.</div>
+          </div>
+        </div>
+
+        <div id="extraWarning" class="extra-warning" style="display:none" role="status" aria-live="polite" aria-atomic="true">
+          <strong>Horario extraordinario</strong>
+          <span>Este horario puede incluir un costo adicional.</span>
+        </div>
+
+        <div class="grid two" style="margin-top:16px">
+          <div class="field">
+            <label for="name">Nombre</label>
+            <input id="name" type="text" maxlength="80" placeholder="Tu nombre" autocomplete="name">
+          </div>
+          <div class="field">
+            <label for="phone">Teléfono</label>
+            <input id="phone" type="tel" inputmode="numeric" pattern="[0-9]{8}" minlength="8" maxlength="8" placeholder="8 dígitos" autocomplete="tel">
+            <div class="helper">Ingresa únicamente 8 dígitos.</div>
+          </div>
+        </div>
+
+        <button id="bookBtn" class="primary wide" style="margin-top:16px" onclick="submitBooking()">Confirmar cita</button>
+        <div id="message" class="message"></div>
+      </div>
+
+      <div id="bookingSuccessView" class="booking-success" style="display:none" aria-live="polite">
+        <div id="successLogo" class="success-logo" aria-hidden="true"></div>
+        <div class="success-check">✓</div>
+        <h3 id="successTitle">Cita Agendada</h3>
+        <p class="sub success-sub">Tu cita quedó registrada correctamente.</p>
+        <div id="successSummary" class="success-summary"></div>
+        <div class="success-actions">
+          <button class="secondary wide" onclick="editLastAppointment()">Modificar cita</button>
+          <button class="primary wide" onclick="bookAnotherAppointment()">Agendar otra cita</button>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">Fernando RD Barber · Agenda de citas</footer>
+  </main>
+
+<script src="/app.js?v=prod-v1-v4-public-config-edge"></script>
+</body>
+</html>

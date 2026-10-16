@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Fernando RD Barber | Reserva tu cita</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=prod-v1-2-horarios">
 </head>
 <body>
   <header id="floatingBrand" class="floating-brand" aria-hidden="true">
@@ -50,10 +50,17 @@
           <div id="dateStatus" class="availability-note" aria-live="polite" aria-atomic="true"></div>
         </div>
 
-        <div class="field" style="margin-top:16px">
-          <label>Horario disponible</label>
+        <div id="availabilitySection" class="field availability-section" style="margin-top:16px" hidden>
+          <div class="availability-title-row">
+            <span class="availability-title-mark" aria-hidden="true"></span>
+            <h3 class="availability-title">Horarios disponibles</h3>
+          </div>
+          <div class="availability-help" role="note" aria-label="Información sobre los horarios disponibles">
+            <span class="availability-help-icon" aria-hidden="true">i</span>
+            <span><strong>Solo se muestran horarios disponibles.</strong> Si una hora no aparece, significa que ya fue reservada o no está disponible para esa fecha.</span>
+          </div>
           <div id="slots" class="slots">
-            <div class="empty" style="grid-column:1/-1">Selecciona un tipo de corte y una fecha.</div>
+            <div class="empty" style="grid-column:1/-1">Consultando horarios...</div>
           </div>
         </div>
 
@@ -126,6 +133,6 @@
     <footer class="footer">Fernando RD Barber · Agenda de citas</footer>
   </main>
 
-<script src="/app.js?v=prod-v1-1-social"></script>
+<script src="/app.js?v=prod-v1-2-horarios"></script>
 </body>
 </html>

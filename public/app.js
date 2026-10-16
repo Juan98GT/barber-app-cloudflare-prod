@@ -1,4 +1,4 @@
-const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-1-social';
+const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-2-horarios';
 
 // ============================================================
 // REDES SOCIALES · PEGA AQUÍ LOS ENLACES DE FERNANDO
@@ -6,9 +6,9 @@ const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-1-social';
 // Deja un valor vacío ('') para mantener esa red deshabilitada.
 // ============================================================
 const SOCIAL_LINKS = Object.freeze({
-  facebook: 'https://www.facebook.com/share/1YviefD4vn/?mibextid=wwXIfr',
-  tiktok: 'https://www.tiktok.com/@fernandobarbergt?_r=1&_t=ZS-9ANQxmaP4Jb',
-  instagram: 'https://www.instagram.com/fernando_rd_21style?utm_source=qr'
+  facebook: '',
+  tiktok: '',
+  instagram: ''
 });
 
 const BARBER_DEBUG_FROM_URL = new URLSearchParams(window.location.search).get('debug') === '1';
@@ -347,6 +347,7 @@ let selectedTime = '';
     renderServiceDescription(serviceId);
     date.value = '';
     setDateStatus('', '');
+    setAvailabilitySectionVisible(false);
 
     if(!serviceId){
       date.disabled = true;
@@ -356,6 +357,12 @@ let selectedTime = '';
 
     date.disabled = false;
     box.innerHTML = '<div class="empty" style="grid-column:1/-1">Selecciona una fecha.</div>';
+  }
+
+  function setAvailabilitySectionVisible(visible){
+    const section = document.getElementById('availabilitySection');
+    if(!section) return;
+    section.hidden = !visible;
   }
 
   function loadDateInfo(){
@@ -368,14 +375,17 @@ let selectedTime = '';
     const serviceId = document.getElementById('service').value;
     const date = document.getElementById('date').value;
     const box = document.getElementById('slots');
+    setAvailabilitySectionVisible(Boolean(date));
     clearMessage();
     setDateStatus('', '');
 
     if(!serviceId){
+      setAvailabilitySectionVisible(false);
       box.innerHTML = '<div class="empty" style="grid-column:1/-1">Selecciona primero el tipo de corte.</div>';
       return;
     }
     if(!date){
+      setAvailabilitySectionVisible(false);
       box.innerHTML = '<div class="empty" style="grid-column:1/-1">Selecciona una fecha.</div>';
       return;
     }
@@ -572,6 +582,7 @@ let selectedTime = '';
     availabilityRequestSeq++;
     selectedTime = '';
     selectedSlot = null;
+    setAvailabilitySectionVisible(false);
     isEditingAppointment = false;
     editingAppointmentId = '';
     editToken = '';

@@ -1,4 +1,4 @@
-const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-2-horarios';
+const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-3-estabilidad';
 
 // ============================================================
 // REDES SOCIALES · PEGA AQUÍ LOS ENLACES DE FERNANDO
@@ -12,8 +12,11 @@ const SOCIAL_LINKS = Object.freeze({
 });
 
 const BARBER_DEBUG_FROM_URL = new URLSearchParams(window.location.search).get('debug') === '1';
-if (BARBER_DEBUG_FROM_URL) sessionStorage.setItem('barber_debug', '1');
-const BARBER_DEBUG_ENABLED = BARBER_DEBUG_FROM_URL || sessionStorage.getItem('barber_debug') === '1';
+let BARBER_DEBUG_ENABLED = BARBER_DEBUG_FROM_URL;
+try {
+  if (BARBER_DEBUG_FROM_URL) sessionStorage.setItem('barber_debug', '1');
+  BARBER_DEBUG_ENABLED = BARBER_DEBUG_ENABLED || sessionStorage.getItem('barber_debug') === '1';
+} catch (err) { /* El calendario y la reserva deben funcionar aunque el navegador bloquee almacenamiento. */ }
 window.__BARBER_DIAGNOSTIC_VERSION__ = BARBER_DIAGNOSTIC_VERSION;
 
 function initSocialLinks(){
@@ -61,29 +64,59 @@ let selectedTime = '';
   let isEditingAppointment = false;
   let preferredEditTime = '';
   let availabilityRequestSeq = 0;
+  let confirmedAvailabilityKey = '';
+  let bookingInFlight = false;
+  let pendingBookingAttempt = null;
+  let bookingNeedsRecovery = false;
+  let businessTimezone = 'America/Guatemala';
+  let calendarVisibleMonth = '';
+  const READ_TIMEOUT_MS = 45000;
+  const WRITE_TIMEOUT_MS = 90000;
 
   async function apiCall(action, payload = {}) {
     const browserStarted = performance.now();
-    const response = await fetch('/api', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, payload })
-    });
-
-    let envelope;
+    const isWrite = action === 'createAppointment' || action === 'updatePublicAppointment';
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), isWrite ? WRITE_TIMEOUT_MS : READ_TIMEOUT_MS);
+    let response;
     try {
-      envelope = await response.json();
-    } catch (e) {
-      throw new Error('El servidor devolvió una respuesta no válida.');
+      response = await fetch('/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload }),
+        signal: controller.signal
+      });
+      let envelope;
+      try {
+        envelope = await response.json();
+      } catch (err) {
+        const failure = new Error('El servidor devolvió una respuesta no válida.');
+        failure.uncertain = true;
+        throw failure;
+      }
+      recordTestTiming(action, envelope && envelope.timing, Math.round(performance.now() - browserStarted));
+      if (!response.ok || !envelope || envelope.ok !== true) {
+        const failure = new Error((envelope && envelope.error) || 'No se pudo completar la operación.');
+        // Errores 5xx pueden ocurrir después de que Apps Script ya guardó la cita.
+        failure.uncertain = response.status >= 500;
+        throw failure;
+      }
+      return envelope.data;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        const failure = new Error('La operación tardó demasiado. No cierres esta página hasta comprobar el resultado.');
+        failure.uncertain = true;
+        throw failure;
+      }
+      if (err instanceof TypeError) {
+        const failure = new Error('Se perdió la conexión con el servidor.');
+        failure.uncertain = true;
+        throw failure;
+      }
+      throw err;
+    } finally {
+      window.clearTimeout(timeout);
     }
-
-    const browserTotalMs = Math.round(performance.now() - browserStarted);
-    recordTestTiming(action, envelope && envelope.timing, browserTotalMs);
-
-    if (!response.ok || !envelope || envelope.ok !== true) {
-      throw new Error((envelope && envelope.error) || 'No se pudo completar la operación.');
-    }
-    return envelope.data;
   }
 
   function recordTestTiming(action, timing, browserTotalMs){
@@ -149,7 +182,7 @@ let selectedTime = '';
       const parsed=JSON.parse(raw);
       if(!parsed || !parsed.cfg || !Array.isArray(parsed.cfg.services) || !parsed.cfg.services.length) return null;
       // Solo es fallback visual. Siempre intentamos refrescar contra el servidor al cargar.
-      if(Date.now()-Number(parsed.savedAt||0) > 7*24*60*60*1000) return null;
+      if(Date.now()-Number(parsed.savedAt||0) > 24*60*60*1000) return null;
       return parsed.cfg;
     } catch(e) { return null; }
   }
@@ -209,14 +242,19 @@ let selectedTime = '';
     if(!cfg || !Array.isArray(cfg.services) || !cfg.services.length) return false;
     const service = document.getElementById('service');
     const previousValue = service.value;
+    const previousService=services.find(item=>String(item.id)===String(previousValue));
     services = cfg.services || [];
     service.innerHTML = '<option value="">Selecciona un servicio</option>' + services.map(s => `<option value="${escAttr(s.id)}">${esc(s.name)}</option>`).join('');
     if(previousValue && services.some(s=>String(s.id)===String(previousValue))) service.value=previousValue;
     service.disabled=false;
     const date = document.getElementById('date');
-    if(cfg.today) date.min = cfg.today;
-    date.max = cfg.maxBookingDate || '';
+    businessTimezone = cfg.timezone || 'America/Guatemala';
     date.dataset.maxBookingDays = String(cfg.maxBookingDays || 90);
+    refreshCalendarBounds_();
+    refreshDatePickerLabel_();
+    document.getElementById('datePickerButton').disabled=!service.value || bookingInFlight || bookingNeedsRecovery;
+    const nextService=services.find(item=>String(item.id)===String(previousValue));
+    if(previousValue && (!nextService || (previousService && Number(previousService.duration)!==Number(nextService.duration)))) onServiceChange();
     return true;
   }
 
@@ -239,7 +277,7 @@ let selectedTime = '';
       if(!applyPublicConfig_(cfg)) throw new Error('La configuración no contiene servicios disponibles.');
       savePublicConfigLocal_(cfg);
       setServiceReadyState_();
-      warmAvailabilityCacheInBackground();
+      // El precalentamiento se realiza por trigger de Apps Script.
     } catch(err){
       console.warn('[Barber TEST config manual retry]',err);
       setServiceErrorState_(services.length ? 'No se pudo actualizar. Puedes continuar con la última lista disponible.' : 'No se pudieron cargar los servicios.');
@@ -273,11 +311,135 @@ let selectedTime = '';
     }
   }
 
+  // Calendario propio: el usuario nunca escribe la fecha en un teclado.
+  // Siempre usamos YYYY-MM-DD y calculamos días al mediodía/UTC para evitar desfases.
+  function localBusinessToday_(){
+    const parts=new Intl.DateTimeFormat('en-US',{
+      timeZone:businessTimezone,year:'numeric',month:'2-digit',day:'2-digit'
+    }).formatToParts(new Date());
+    const find=type=>parts.find(x=>x.type===type).value;
+    return `${find('year')}-${find('month')}-${find('day')}`;
+  }
+
+  function addCalendarDays_(iso,days){
+    const d=new Date(`${iso}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate()+days);
+    return d.toISOString().slice(0,10);
+  }
+
+  function validCalendarISO_(iso){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(iso||''))) return false;
+    const d=new Date(`${iso}T12:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0,10)===iso;
+  }
+
+  function refreshCalendarBounds_(){
+    const input=document.getElementById('date');
+    const today=localBusinessToday_();
+    const days=Number(input.dataset.maxBookingDays||90);
+    input.min=today;
+    input.max=addCalendarDays_(today,Number.isInteger(days)&&days>=0?days:90);
+    if(input.value && !isCalendarDateAllowed_(input.value)){
+      input.value='';
+      confirmedAvailabilityKey='';
+      selectedTime='';selectedSlot=null;
+      availabilityRequestSeq++;
+      hideExtraWarning();
+      setAvailabilitySectionVisible(false);
+    }
+    refreshDatePickerLabel_();
+  }
+
+  function isCalendarDateAllowed_(iso){
+    const input=document.getElementById('date');
+    return validCalendarISO_(iso) && (!input.min||iso>=input.min) && (!input.max||iso<=input.max);
+  }
+
+  function refreshDatePickerLabel_(){
+    const selected=document.getElementById('date').value;
+    document.getElementById('datePickerText').textContent=selected?formatDate(selected):'Selecciona una fecha';
+  }
+
+  function closeCalendar_(){
+    document.getElementById('dateCalendar').hidden=true;
+    document.getElementById('datePickerButton').setAttribute('aria-expanded','false');
+  }
+
+  function drawCalendar_(){
+    const input=document.getElementById('date');
+    const y=Number(calendarVisibleMonth.slice(0,4));
+    const m=Number(calendarVisibleMonth.slice(5,7));
+    const first=new Date(Date.UTC(y,m-1,1,12));
+    const heading=first.toLocaleDateString('es-GT',{month:'long',year:'numeric',timeZone:'UTC'});
+    document.getElementById('calendarTitle').textContent=heading.charAt(0).toUpperCase()+heading.slice(1);
+    const offset=(first.getUTCDay()+6)%7;
+    const count=new Date(Date.UTC(y,m,0,12)).getUTCDate();
+    const elements=[];
+    for(let i=0;i<offset;i++) elements.push('<span class="date-calendar-empty"></span>');
+    const today=localBusinessToday_();
+    for(let day=1;day<=count;day++){
+      const iso=`${String(y).padStart(4,'0')}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const disabled=!isCalendarDateAllowed_(iso);
+      const classes=['date-calendar-day'];
+      if(iso===today) classes.push('is-today');
+      if(iso===input.value) classes.push('is-selected');
+      elements.push(`<button type="button" class="${classes.join(' ')}" data-date="${iso}" aria-label="${day} de ${first.toLocaleDateString('es-GT',{month:'long',timeZone:'UTC'})} de ${y}" ${iso===input.value?'aria-pressed="true"':''} ${disabled?'disabled':''}>${day}</button>`);
+    }
+    document.getElementById('calendarDays').innerHTML=elements.join('');
+    const prev=new Date(Date.UTC(y,m-2,1,12)).toISOString().slice(0,7);
+    const next=new Date(Date.UTC(y,m,1,12)).toISOString().slice(0,7);
+    document.getElementById('calendarPrev').disabled=prev<input.min.slice(0,7);
+    document.getElementById('calendarNext').disabled=next>input.max.slice(0,7);
+  }
+
+  function moveCalendarMonth_(delta){
+    const [y,m]=calendarVisibleMonth.split('-').map(Number);
+    const month=new Date(Date.UTC(y,m-1+delta,1,12)).toISOString().slice(0,7);
+    const input=document.getElementById('date');
+    if(month<input.min.slice(0,7)||month>input.max.slice(0,7)) return;
+    calendarVisibleMonth=month;
+    drawCalendar_();
+  }
+
+  function setupDateCalendar_(){
+    const trigger=document.getElementById('datePickerButton');
+    const panel=document.getElementById('dateCalendar');
+    trigger.addEventListener('click',()=>{
+      if(trigger.disabled||bookingInFlight||bookingNeedsRecovery) return;
+      if(!panel.hidden){closeCalendar_();return;}
+      refreshCalendarBounds_();
+      calendarVisibleMonth=(document.getElementById('date').value||localBusinessToday_()).slice(0,7);
+      drawCalendar_();
+      panel.hidden=false;
+      trigger.setAttribute('aria-expanded','true');
+    });
+    document.getElementById('calendarPrev').addEventListener('click',()=>moveCalendarMonth_(-1));
+    document.getElementById('calendarNext').addEventListener('click',()=>moveCalendarMonth_(1));
+    document.getElementById('calendarClose').addEventListener('click',()=>{closeCalendar_();trigger.focus();});
+    document.getElementById('calendarDays').addEventListener('click',ev=>{
+      const day=ev.target.closest('[data-date]');
+      if(!day||day.disabled) return;
+      const value=day.dataset.date;
+      if(!isCalendarDateAllowed_(value)) return;
+      document.getElementById('date').value=value;
+      refreshDatePickerLabel_();
+      closeCalendar_();
+      trigger.focus();
+      loadDateInfo();
+    });
+    document.addEventListener('pointerdown',ev=>{
+      if(!panel.hidden&&!document.getElementById('datePickerWrap').contains(ev.target)) closeCalendar_();
+    });
+    document.addEventListener('keydown',ev=>{
+      if(ev.key==='Escape'&&!panel.hidden){closeCalendar_();trigger.focus();}
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', async () => {
     ensureTestTimingPanel();
     initSocialLinks();
     document.getElementById('service').addEventListener('change', onServiceChange);
-    document.getElementById('date').addEventListener('change', loadDateInfo);
+    setupDateCalendar_();
     document.getElementById('phone').addEventListener('input', enforcePhoneDigits);
     setupFloatingBrand();
 
@@ -291,7 +453,7 @@ let selectedTime = '';
     const hadLocalConfig=applyPublicConfig_(localCfg);
     if(hadLocalConfig){
       setServiceRefreshingState_('Servicios disponibles. Actualizando información...');
-      setTimeout(()=>warmAvailabilityCacheInBackground(),250);
+      // El activador del servidor mantiene la caché; evitamos un POST adicional por visitante.
     }
 
     try {
@@ -299,7 +461,7 @@ let selectedTime = '';
       if(!applyPublicConfig_(cfg)) throw new Error('La configuración no contiene servicios disponibles.');
       savePublicConfigLocal_(cfg);
       setServiceReadyState_();
-      if(!hadLocalConfig) warmAvailabilityCacheInBackground();
+      // El precalentamiento periódico evita carga extra por cada visitante.
     } catch (err) {
       if(hadLocalConfig){
         console.warn('[Barber TEST] Se conserva configuración local por fallo temporal del backend.',err);
@@ -336,7 +498,9 @@ let selectedTime = '';
     availabilityRequestSeq++;
     selectedTime = '';
     selectedSlot = null;
+    confirmedAvailabilityKey = '';
     preferredEditTime = '';
+    closeCalendar_();
     hideExtraWarning();
     clearMessage();
 
@@ -346,16 +510,17 @@ let selectedTime = '';
 
     renderServiceDescription(serviceId);
     date.value = '';
+    refreshDatePickerLabel_();
     setDateStatus('', '');
     setAvailabilitySectionVisible(false);
 
     if(!serviceId){
-      date.disabled = true;
+      document.getElementById('datePickerButton').disabled = true;
       box.innerHTML = '<div class="empty" style="grid-column:1/-1">Selecciona un tipo de corte y una fecha.</div>';
       return;
     }
 
-    date.disabled = false;
+    document.getElementById('datePickerButton').disabled = false;
     box.innerHTML = '<div class="empty" style="grid-column:1/-1">Selecciona una fecha.</div>';
   }
 
@@ -371,7 +536,9 @@ let selectedTime = '';
     const requestId = ++availabilityRequestSeq;
     selectedTime = '';
     selectedSlot = null;
+    confirmedAvailabilityKey = '';
     hideExtraWarning();
+    refreshCalendarBounds_();
     const serviceId = document.getElementById('service').value;
     const date = document.getElementById('date').value;
     const box = document.getElementById('slots');
@@ -394,6 +561,10 @@ let selectedTime = '';
     // la validación definitiva, pero este control evita enviar una consulta que
     // sabemos que será rechazada y mantiene el aviso junto al selector de fecha.
     const dateInput = document.getElementById('date');
+    if(!validCalendarISO_(date)){
+      setDateStatus('Selecciona una fecha válida en el calendario.', 'blocked');
+      return;
+    }
     if(dateInput.min && date < dateInput.min){
       setDateStatus('Esta fecha ya pasó. Selecciona una fecha a partir de hoy.', 'blocked');
       box.innerHTML = '<div class="empty" style="grid-column:1/-1">Selecciona una fecha válida para consultar horarios.</div>';
@@ -425,6 +596,7 @@ let selectedTime = '';
     apiCall(action, payload)
       .then(info => {
         if(!isCurrentRequest()) return;
+        confirmedAvailabilityKey = `${serviceId}|${date}`;
         renderAvailability(info);
       })
       .catch(err => {
@@ -463,6 +635,7 @@ let selectedTime = '';
   }
 
   function selectSlot(btn){
+    if(bookingInFlight||bookingNeedsRecovery||!confirmedAvailabilityKey) return;
     document.querySelectorAll('.slot').forEach(x => x.classList.remove('active'));
     btn.classList.add('active');
     selectedTime = btn.dataset.time;
@@ -470,7 +643,23 @@ let selectedTime = '';
     if(selectedSlot.extraordinary) showExtraWarning(); else hideExtraWarning();
   }
 
-  function submitBooking(){
+  function setBookingFieldsLocked_(locked){
+    document.getElementById('service').disabled = locked || !services.length;
+    document.getElementById('datePickerButton').disabled = locked || !document.getElementById('service').value;
+    document.getElementById('name').disabled = locked;
+    document.getElementById('phone').disabled = locked;
+    document.querySelectorAll('#slots .slot').forEach(btn=>{btn.disabled=locked;});
+  }
+
+  function newBookingRequestId_(){
+    if(!window.crypto || !window.crypto.getRandomValues) throw new Error('Tu navegador no permite generar una solicitud segura. Actualízalo para reservar.');
+    const bytes=new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    return 'brq_'+Array.from(bytes,byte=>byte.toString(16).padStart(2,'0')).join('');
+  }
+
+  async function submitBooking(){
+    if(bookingInFlight) return;
     const btn = document.getElementById('bookBtn');
     const payload = {
       serviceId: document.getElementById('service').value,
@@ -479,9 +668,14 @@ let selectedTime = '';
       name: document.getElementById('name').value.trim(),
       phone: document.getElementById('phone').value.replace(/\D/g,'')
     };
-
     if(!payload.serviceId || !payload.date || !payload.time || !payload.name || !payload.phone){
       showMessage('Completa tipo de corte, fecha, hora, nombre y teléfono.', 'error');
+      return;
+    }
+    if(!bookingNeedsRecovery) refreshCalendarBounds_();
+    if(!validCalendarISO_(payload.date) || (!bookingNeedsRecovery && !isCalendarDateAllowed_(payload.date))){
+      showMessage('La fecha no es válida o ya quedó fuera del rango permitido. Selecciónala nuevamente.', 'error');
+      loadDateInfo();
       return;
     }
     if(!/^\d{8}$/.test(payload.phone)){
@@ -489,28 +683,75 @@ let selectedTime = '';
       document.getElementById('phone').focus();
       return;
     }
+    if(!bookingNeedsRecovery && (confirmedAvailabilityKey!==`${payload.serviceId}|${payload.date}` || !selectedSlot || selectedSlot.time!==payload.time ||
+        !Array.from(document.querySelectorAll('#slots .slot')).some(b=>b.dataset.time===payload.time && b.classList.contains('active')))){
+      showMessage('Vuelve a seleccionar un horario disponible para esta fecha y este servicio.', 'error');
+      loadDateInfo();
+      return;
+    }
 
-    btn.disabled = true;
-    btn.textContent = isEditingAppointment ? 'Guardando cambios...' : 'Registrando...';
-    const action = (isEditingAppointment && editToken)
-      ? 'updatePublicAppointment'
-      : 'createAppointment';
-    const apiPayload = (isEditingAppointment && editToken)
-      ? { editToken, appointment: payload }
-      : { appointment: payload };
+    const editing = isEditingAppointment && Boolean(editToken);
+    const signature = JSON.stringify(payload);
+    if(!editing){
+      if(pendingBookingAttempt && pendingBookingAttempt.signature !== signature){
+        showMessage('Existe una reserva sin confirmar. Reintenta esa misma solicitud antes de cambiar sus datos.', 'error');
+        return;
+      }
+      if(!pendingBookingAttempt){
+        try { pendingBookingAttempt = {signature,requestId:newBookingRequestId_()}; }
+        catch(err){showMessage(err.message,'error');return;}
+      }
+    }
 
-    apiCall(action, apiPayload)
-      .then(res => {
-        btn.disabled = false;
-        btn.textContent = 'Confirmar cita';
-        showBookingSuccess(res, payload);
-      })
-      .catch(err => {
+    bookingInFlight=true;
+    bookingNeedsRecovery=false;
+    btn.disabled=true;
+    btn.textContent=editing?'Guardando cambios...':'Registrando...';
+    setBookingFieldsLocked_(true);
+    const action=editing?'updatePublicAppointment':'createAppointment';
+    const apiPayload=editing?{editToken,appointment:payload}:
+      {appointment:{...payload,bookingRequestId:pendingBookingAttempt.requestId}};
+    try {
+      const result=await apiCall(action,apiPayload);
+      pendingBookingAttempt=null;
+      showBookingSuccess(result,payload);
+    } catch(err){
+      if(!editing && err.uncertain && pendingBookingAttempt){
+        // Esta consulta NO crea citas: pregunta si el primer POST llegó a escribirse.
+        try {
+          const verification=await apiCall('getBookingAttemptStatus',{
+            bookingRequestId:pendingBookingAttempt.requestId,phone:payload.phone
+          });
+          if(verification && verification.found && verification.appointment){
+            pendingBookingAttempt=null;
+            showBookingSuccess(verification,verification.appointment);
+            return;
+          }
+        } catch(verificationError) {
+          console.warn('[Barber] No se pudo verificar todavía el intento de reserva.',verificationError);
+        }
+        bookingNeedsRecovery=true;
+        showMessage('No pudimos confirmar si la cita quedó registrada. Para evitar duplicados, pulsa «Verificar / reintentar». No cierres esta página ni cambies los datos hasta recibir la confirmación.', 'error');
+      } else if(editing && err.uncertain){
+        bookingNeedsRecovery=true;
+        showMessage('No se pudo confirmar si los cambios quedaron guardados. Pulsa «Reintentar cambios»; no se creará una segunda cita.', 'error');
+      } else {
+        pendingBookingAttempt=null;
+        bookingNeedsRecovery=false;
         showMessage(err.message || String(err), 'error');
-        btn.disabled = false;
-        btn.textContent = isEditingAppointment ? 'Guardar cambios' : 'Confirmar cita';
         loadDateInfo();
-      });
+      }
+    } finally {
+      bookingInFlight=false;
+      btn.disabled=false;
+      if(bookingNeedsRecovery){
+        btn.textContent=editing?'Reintentar cambios':'Verificar / reintentar';
+        setBookingFieldsLocked_(true);
+      } else {
+        btn.textContent=isEditingAppointment?'Guardar cambios':'Confirmar cita';
+        setBookingFieldsLocked_(false);
+      }
+    }
   }
 
   function showBookingSuccess(res, payload){
@@ -565,8 +806,10 @@ let selectedTime = '';
     document.querySelector('#bookingFormView .sub').textContent = 'Puedes cambiar el tipo de corte, fecha, hora, nombre o teléfono. Volveremos a validar la disponibilidad antes de guardar.';
     document.getElementById('service').value = lastBooking.serviceId;
     renderServiceDescription(lastBooking.serviceId);
-    document.getElementById('date').disabled = false;
+    document.getElementById('datePickerButton').disabled = false;
     document.getElementById('date').value = lastBooking.date;
+    refreshCalendarBounds_();
+    refreshDatePickerLabel_();
     document.getElementById('name').value = lastBooking.name;
     document.getElementById('phone').value = lastBooking.phone;
     document.getElementById('bookBtn').textContent = 'Guardar cambios';
@@ -582,6 +825,10 @@ let selectedTime = '';
     availabilityRequestSeq++;
     selectedTime = '';
     selectedSlot = null;
+    confirmedAvailabilityKey = '';
+    pendingBookingAttempt = null;
+    bookingNeedsRecovery = false;
+    closeCalendar_();
     setAvailabilitySectionVisible(false);
     isEditingAppointment = false;
     editingAppointmentId = '';
@@ -591,7 +838,8 @@ let selectedTime = '';
     document.getElementById('service').value = '';
     renderServiceDescription('');
     document.getElementById('date').value = '';
-    document.getElementById('date').disabled = true;
+    document.getElementById('datePickerButton').disabled = true;
+    refreshDatePickerLabel_();
     document.getElementById('name').value = '';
     document.getElementById('phone').value = '';
     document.getElementById('slots').innerHTML = '<div class="empty" style="grid-column:1/-1">Selecciona un tipo de corte y una fecha.</div>';

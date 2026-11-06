@@ -404,11 +404,16 @@
 @media(max-width:390px){.date-calendar{padding:9px}.date-calendar-days,.date-calendar-weekdays{gap:2px}.date-calendar-day{min-height:37px}}
 
 
-/* V1.3.2: ticket opcional, generado localmente después de la confirmación. */
-.success-ticket-actions{width:100%;display:grid;grid-template-columns:1fr;gap:10px;margin-top:8px}
-@media(min-width:520px){.success-ticket-actions{grid-template-columns:1fr 1fr}}
-.success-ticket-actions button{min-width:0}
-.ticket-status{min-height:16px;margin:0;width:100%;text-align:center;font-size:12px;color:#a8cdbd;line-height:1.45}
+/* V1.3.2.1: mantener las dos acciones originales como principales y agrupar el ticket aparte. */
+.ticket-reminder{width:100%;min-width:0;display:grid;justify-items:center;gap:6px;margin-top:16px;padding:15px 12px 13px;border:1px solid rgba(212,175,55,.21);border-radius:15px;background:rgba(8,23,38,.68)}
+.ticket-reminder-title{margin:0;color:#d9e6f2;font-size:13px;font-weight:800;line-height:1.35}
+.ticket-reminder-description{margin:0;color:var(--muted);font-size:12px;line-height:1.45}
+.success-ticket-actions{width:100%;min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:6px}
+.success-ticket-actions .ticket-action{width:100%;min-width:0;min-height:43px;border:1px solid rgba(168,190,213,.28);border-radius:11px;background:#0c263f;color:#dce8f6;padding:10px 6px;font-size:12.5px;line-height:1.2;font-weight:750;transition:background .18s,border-color .18s}
+.success-ticket-actions .ticket-action:hover{background:#153452;border-color:rgba(212,175,55,.45)}
+.success-ticket-actions .ticket-action:focus-visible{outline:2px solid var(--gold2);outline-offset:2px}
+.ticket-status{margin:0;width:100%;text-align:center;font-size:12px;color:#a8cdbd;line-height:1.45}
+.ticket-status:empty{display:none}
 .ticket-status.error{color:#f2a7a7}
 .ticket-preview-link{font-size:13px;color:var(--gold2);text-decoration:underline;text-underline-offset:3px}
 .ticket-preview-link[hidden]{display:none!important}

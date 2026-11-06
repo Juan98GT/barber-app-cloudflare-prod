@@ -1,4 +1,4 @@
-const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-3-3-sincronizacion-horarios';
+const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-3-3-2-boton-actualizar';
 
 // ============================================================
 // REDES SOCIALES · PEGA AQUÍ LOS ENLACES DE FERNANDO
@@ -64,6 +64,7 @@ let selectedTime = '';
   let isEditingAppointment = false;
   let preferredEditTime = '';
   let availabilityRequestSeq = 0;
+  let availabilityPendingKey = ''; // evita solicitudes de disponibilidad simultáneas para la misma fecha y servicio
   let confirmedAvailabilityKey = '';
   let lastAvailabilityCheckAt = 0; // evitar refrescos automáticos reiterados
   let bookingInFlight = false;
@@ -546,7 +547,15 @@ let selectedTime = '';
     section.hidden = !visible;
   }
 
+  function setAvailabilityRefreshLoading_(loading){
+    const button = document.getElementById('refreshAvailabilityBtn');
+    if(!button) return;
+    button.hidden = Boolean(loading);
+    button.disabled = Boolean(loading);
+  }
+
   function refreshAvailableTimes(){
+    if(availabilityPendingKey) return; // no lanzar otra consulta mientras termina la actual
     if(bookingInFlight||bookingNeedsRecovery) return;
     if(document.getElementById('bookingFormView').style.display==='none') return;
     if(!document.getElementById('service').value || !document.getElementById('date').value) return;
@@ -562,9 +571,18 @@ let selectedTime = '';
   }
 
   function loadDateInfo(){
+    // Impide repetir la misma consulta mientras está pendiente, incluso si se dispara
+    // otro evento del navegador o el usuario pulsa varias veces.
+    const requestedService = document.getElementById('service').value;
+    const requestedDate = document.getElementById('date').value;
+    const requestedKey = `${requestedService}|${requestedDate}|${isEditingAppointment ? editToken : ''}`;
+    if(availabilityPendingKey && availabilityPendingKey === requestedKey) return;
+
     // Cada consulta recibe un identificador. Si el usuario cambia de fecha o servicio
     // antes de que responda el servidor, las respuestas anteriores se descartan.
     const requestId = ++availabilityRequestSeq;
+    availabilityPendingKey = '';
+    setAvailabilityRefreshLoading_(false);
     lastAvailabilityCheckAt=Date.now();
     selectedTime = '';
     selectedSlot = null;
@@ -625,6 +643,8 @@ let selectedTime = '';
       ? { date, serviceId, editToken }
       : { date, serviceId };
 
+    availabilityPendingKey = requestedKey;
+    setAvailabilityRefreshLoading_(true);
     apiCall(action, payload)
       .then(info => {
         if(!isCurrentRequest()) return;
@@ -635,6 +655,13 @@ let selectedTime = '';
         if(!isCurrentRequest()) return;
         box.innerHTML = '<div class="empty" style="grid-column:1/-1">No se pudo consultar la disponibilidad.</div>';
         showMessage(err.message || String(err), 'error');
+      })
+      .finally(() => {
+        // Una respuesta antigua nunca debe volver a mostrar el botón si hay
+        // otra consulta más reciente en curso.
+        if(requestId !== availabilityRequestSeq) return;
+        availabilityPendingKey = '';
+        setAvailabilityRefreshLoading_(false);
       });
   }
 

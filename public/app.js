@@ -1,4 +1,4 @@
-const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-3-3-2-boton-actualizar';
+const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-3-3-3-correccion-disponibilidad';
 
 // ============================================================
 // REDES SOCIALES · PEGA AQUÍ LOS ENLACES DE FERNANDO
@@ -78,41 +78,60 @@ let selectedTime = '';
   async function apiCall(action, payload = {}) {
     const browserStarted = performance.now();
     const isWrite = action === 'createAppointment' || action === 'updatePublicAppointment';
+    const isAvailability = action === 'getDateAvailabilityInfo' || action === 'getEditableAvailability';
+    const timeoutMs = isWrite ? WRITE_TIMEOUT_MS : (isAvailability ? 30000 : READ_TIMEOUT_MS);
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), isWrite ? WRITE_TIMEOUT_MS : READ_TIMEOUT_MS);
-    let response;
+    let timeout;
     try {
-      response = await fetch('/api', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, payload }),
-        signal: controller.signal
+      // Promise.race es un límite independiente: algunos proxies/navegadores
+      // no completan inmediatamente un fetch aun después de abortar.
+      const deadline = new Promise((_,reject)=>{
+        timeout=window.setTimeout(()=>{
+          controller.abort();
+          const error=new Error(isAvailability
+            ? 'La consulta tardó demasiado. Pulsa Actualizar para intentar nuevamente.'
+            : 'La operación tardó demasiado. Comprueba el resultado antes de intentarlo de nuevo.');
+          error.code='BARBER_REQUEST_TIMEOUT';
+          error.uncertain=isWrite;
+          reject(error);
+        },timeoutMs);
       });
-      let envelope;
-      try {
-        envelope = await response.json();
-      } catch (err) {
-        const failure = new Error('El servidor devolvió una respuesta no válida.');
-        failure.uncertain = true;
-        throw failure;
-      }
-      recordTestTiming(action, envelope && envelope.timing, Math.round(performance.now() - browserStarted));
-      if (!response.ok || !envelope || envelope.ok !== true) {
-        const failure = new Error((envelope && envelope.error) || 'No se pudo completar la operación.');
-        // Errores 5xx pueden ocurrir después de que Apps Script ya guardó la cita.
-        failure.uncertain = response.status >= 500;
+      const request = (async()=>{
+        const response=await fetch('/api',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action,payload}),
+          signal:controller.signal
+        });
+        let envelope;
+        try { envelope=await response.json(); }
+        catch(e){
+          const failure=new Error('El servidor devolvió una respuesta no válida.');
+          failure.uncertain=isWrite;
+          throw failure;
+        }
+        return {response,envelope};
+      })();
+      const {response,envelope}=await Promise.race([request,deadline]);
+      recordTestTiming(action,envelope && envelope.timing,Math.round(performance.now()-browserStarted));
+      if(!response.ok || !envelope || envelope.ok!==true){
+        const failure=new Error((envelope && envelope.error)||'No se pudo completar la operación.');
+        failure.uncertain=isWrite && response.status>=500;
         throw failure;
       }
       return envelope.data;
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        const failure = new Error('La operación tardó demasiado. No cierres esta página hasta comprobar el resultado.');
-        failure.uncertain = true;
+    } catch(err){
+      if(err.code==='BARBER_REQUEST_TIMEOUT') throw err;
+      if(err.name==='AbortError'){
+        const failure=new Error(isAvailability
+          ? 'La consulta se interrumpió. Pulsa Actualizar para volver a consultar.'
+          : 'La operación tardó demasiado. Comprueba el resultado antes de intentarlo de nuevo.');
+        failure.uncertain=isWrite;
         throw failure;
       }
-      if (err instanceof TypeError) {
-        const failure = new Error('Se perdió la conexión con el servidor.');
-        failure.uncertain = true;
+      if(err instanceof TypeError){
+        const failure=new Error('Se perdió la conexión con el servidor.');
+        failure.uncertain=isWrite;
         throw failure;
       }
       throw err;
@@ -158,6 +177,8 @@ let selectedTime = '';
       `Apps Script total: ${a.appsScriptTotalMs ?? '-'} ms`,
       `  Citas/Sheets: ${a.appointmentsReadMs ?? '-'} ms (${a.appointmentsCache || '-'})`,
       `  Espera caché disponibilidad: ${a.appointmentsCacheLockWaitMs ?? '-'} ms`,
+      `  Reconstrucción fecha: ${a.availabilityMissStrategy || '-'} · ${a.availabilityMissReadMs ?? '-'} ms`,
+      `  Filas examinadas/coincidentes: ${a.availabilityMissRowsScanned ?? '-'} / ${a.availabilityMissMatches ?? '-'}`,
       `  Horario: ${a.scheduleMs ?? '-'} ms`,
       `  Extraordinarios: ${a.extraHoursMs ?? '-'} ms`,
       `  Bloqueos: ${a.blocksMs ?? '-'} ms`,
@@ -355,6 +376,8 @@ let selectedTime = '';
       confirmedAvailabilityKey='';
       selectedTime='';selectedSlot=null;
       availabilityRequestSeq++;
+      availabilityPendingKey='';
+      setAvailabilityRefreshLoading_(false);
       hideExtraWarning();
       setAvailabilitySectionVisible(false);
     }
@@ -513,6 +536,8 @@ let selectedTime = '';
     // Al cambiarlo se invalida cualquier consulta previa y se obliga a elegir
     // nuevamente fecha y hora para evitar mezclar resultados del servicio anterior.
     availabilityRequestSeq++;
+    availabilityPendingKey='';
+    setAvailabilityRefreshLoading_(false);
     selectedTime = '';
     selectedSlot = null;
     confirmedAvailabilityKey = '';

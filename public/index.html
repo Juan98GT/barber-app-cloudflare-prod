@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Fernando RD Barber | Reserva tu cita</title>
-  <link rel="stylesheet" href="/styles.css?v=prod-v1-3-2-rendimiento-ticket">
+  <link rel="stylesheet" href="/styles.css?v=prod-v1-3-2-1-diseno-botones">
 </head>
 <body>
   <header id="floatingBrand" class="floating-brand" aria-hidden="true">
@@ -107,16 +107,22 @@
         <h3 id="successTitle">Cita Agendada</h3>
         <p class="sub success-sub">Tu cita quedó registrada correctamente.</p>
         <div id="successSummary" class="success-summary"></div>
-        <div class="success-ticket-actions">
-          <button type="button" id="saveTicketBtn" class="primary wide" onclick="saveAppointmentTicket()">Guardar ticket (PNG)</button>
-          <button type="button" id="shareTicketBtn" class="secondary wide" onclick="shareAppointmentTicket()">Compartir ticket</button>
-        </div>
-        <p id="ticketStatus" class="ticket-status" role="status" aria-live="polite"></p>
-        <a id="ticketPreviewLink" class="ticket-preview-link" target="_blank" rel="noopener" hidden>Ver imagen para guardarla</a>
+        <!-- Acciones principales originales: se mantienen juntas, antes del recordatorio. -->
         <div class="success-actions">
           <button class="secondary wide" onclick="editLastAppointment()">Modificar cita</button>
           <button class="primary wide" onclick="bookAnotherAppointment()">Agendar otra cita</button>
         </div>
+        <!-- Opciones secundarias. No alteran las acciones ni los datos de la cita. -->
+        <section class="ticket-reminder" aria-label="Recordatorio de tu cita">
+          <p class="ticket-reminder-title">¿Quieres guardar un recordatorio?</p>
+          <p class="ticket-reminder-description">Descarga o comparte tu cita como imagen.</p>
+          <div class="success-ticket-actions">
+            <button type="button" id="saveTicketBtn" class="ticket-action" onclick="saveAppointmentTicket()">Guardar ticket</button>
+            <button type="button" id="shareTicketBtn" class="ticket-action" onclick="shareAppointmentTicket()">Compartir ticket</button>
+          </div>
+          <p id="ticketStatus" class="ticket-status" role="status" aria-live="polite"></p>
+          <a id="ticketPreviewLink" class="ticket-preview-link" target="_blank" rel="noopener" hidden>Ver imagen para guardarla</a>
+        </section>
       </div>
     </section>
 

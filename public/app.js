@@ -1,4 +1,4 @@
-const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-3-estabilidad';
+const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-3-2-rendimiento-ticket';
 
 // ============================================================
 // REDES SOCIALES · PEGA AQUÍ LOS ENLACES DE FERNANDO
@@ -161,6 +161,14 @@ let selectedTime = '';
       `  Pausas: ${a.breaksMs ?? '-'} ms`,
       `  Cálculo slots: ${a.slotCalculationMs ?? '-'} ms`,
       `  Validación reserva - citas: ${a.bookingAppointmentsMs ?? '-'} ms`,
+      `    Estrategia: ${a.bookingFreshStrategy || '-'}`, 
+      `    Acceso hoja: ${a.bookingFreshSheetMs ?? '-'} ms`,
+      `    Lectura principal: ${a.bookingFreshReadMs ?? '-'} ms`,
+      `    Filtrado: ${a.bookingFreshFilterMs ?? '-'} ms`,
+      `    Lectura complementaria: ${a.bookingFreshDetailMs ?? '-'} ms`,
+      `    Filas examinadas/coincidentes: ${a.bookingFreshRowsScanned ?? '-'} / ${a.bookingFreshRowsMatched ?? '-'}`,
+      `    Fechas Date distintas: ${a.bookingFreshUniqueDates ?? '-'}`,
+      `  Espera de bloqueo: ${a.bookingLockWaitMs ?? '-'} ms`,
       `  Revalidación reserva: ${a.bookingRevalidateMs ?? '-'} ms`,
       `  Escritura cita: ${a.bookingWriteMs ?? '-'} ms`,
       `  Actualización estado rápido: ${a.bookingFastStateMs ?? '-'} ms`,
@@ -755,6 +763,7 @@ let selectedTime = '';
   }
 
   function showBookingSuccess(res, payload){
+    resetTicketPreview_();
     const service = services.find(s => s.id === payload.serviceId);
     lastBooking = {
       id: res.id || editingAppointmentId || '',
@@ -786,9 +795,214 @@ let selectedTime = '';
     document.getElementById('mainHero').style.display = 'none';
     document.getElementById('bookingFormView').style.display = 'none';
     document.getElementById('bookingSuccessView').style.display = 'grid';
+    prepareTicketAfterSuccess_();
     hideExtraWarning();
     clearMessage();
     setTimeout(() => document.getElementById('bookingCard').scrollIntoView({behavior:'smooth', block:'start'}), 60);
+  }
+
+  // V1.3.2 - Ticket local PNG. No se consulta al servidor ni se guardan datos
+  // personales en un servicio externo. Solo usa el resumen de la cita confirmada.
+  let generatedTicketUrl_ = '';
+  let preparedTicketPromise_ = null;
+  function setTicketStatus_(message,isError){
+    const status=document.getElementById('ticketStatus');
+    if(!status) return;
+    status.textContent=message || '';
+    status.classList.toggle('error',Boolean(isError));
+  }
+
+  function ticketFileName_(booking){
+    const date=String(booking.date||'').replace(/[^0-9-]/g,'');
+    const time=String(booking.time||'').replace(/[^0-9]/g,'');
+    return `Fernando_RD_Barber_Cita_${date}_${time}.png`;
+  }
+
+  function roundedTicketRect_(ctx,x,y,w,h,r){
+    const rr=Math.max(0,Math.min(r,w/2,h/2));
+    ctx.beginPath();ctx.moveTo(x+rr,y);ctx.lineTo(x+w-rr,y);
+    ctx.quadraticCurveTo(x+w,y,x+w,y+rr);ctx.lineTo(x+w,y+h-rr);
+    ctx.quadraticCurveTo(x+w,y+h,x+w-rr,y+h);ctx.lineTo(x+rr,y+h);
+    ctx.quadraticCurveTo(x,y+h,x,y+h-rr);ctx.lineTo(x,y+rr);
+    ctx.quadraticCurveTo(x,y,x+rr,y);ctx.closePath();
+  }
+
+  function ticketTextLines_(ctx,value,maxWidth,maxLines){
+    const words=String(value||'').trim().split(/\s+/).filter(Boolean);
+    const lines=[];let line='';
+    for(const word of words){
+      const next=line?line+' '+word:word;
+      if(ctx.measureText(next).width<=maxWidth){line=next;continue;}
+      if(line){lines.push(line);line=word;} else {line=word;}
+      // Truncar una palabra excesivamente larga sin desbordar el ticket.
+      while(ctx.measureText(line).width>maxWidth && line.length>1){
+        let cut=line.length-1;
+        while(cut>1 && ctx.measureText(line.slice(0,cut)+'…').width>maxWidth) cut--;
+        lines.push(line.slice(0,cut)+'…');
+        line=line.slice(cut);
+      }
+      if(lines.length>=maxLines) break;
+    }
+    if(line && lines.length<maxLines) lines.push(line);
+    if(lines.length>maxLines) lines.length=maxLines;
+    if(lines.length===maxLines && words.length && ctx.measureText(lines[maxLines-1]).width>maxWidth){
+      let t=lines[maxLines-1];while(t.length>1&&ctx.measureText(t+'…').width>maxWidth)t=t.slice(0,-1);
+      lines[maxLines-1]=t+'…';
+    }
+    return lines.length?lines:['—'];
+  }
+
+  function drawTicketRow_(ctx,label,value,y){
+    roundedTicketRect_(ctx,74,y,932,112,24);
+    ctx.fillStyle='#0A2030';ctx.fill();
+    ctx.strokeStyle='#263D50';ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle='#A9B6C7';ctx.font='500 29px Arial, sans-serif';
+    ctx.textAlign='left';ctx.fillText(label,104,y+51);
+    ctx.fillStyle='#FFFFFF';ctx.font='bold 34px Arial, sans-serif';
+    const lines=ticketTextLines_(ctx,value,605,2);
+    ctx.textAlign='right';
+    if(lines.length===1)ctx.fillText(lines[0],972,y+69);
+    else lines.forEach((line,i)=>ctx.fillText(line,972,y+47+i*35));
+  }
+
+  async function loadTicketLogo_(){
+    const image=new Image();
+    image.decoding='async';
+    image.src=(document.querySelector('#mainHero .barber-logo') || {}).src || '/logo.png';
+    try {
+      if(image.decode) await image.decode();
+      else await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;});
+      return image;
+    } catch(err){ console.warn('[Barber ticket] El logo no pudo cargarse.',err);return null; }
+  }
+
+  async function createTicketBlob_(booking){
+    const canvas=document.createElement('canvas');
+    canvas.width=1080;canvas.height=1350;
+    const ctx=canvas.getContext('2d');
+    if(!ctx) throw new Error('Tu navegador no permite crear el recordatorio.');
+    const gradient=ctx.createLinearGradient(0,0,1080,1350);
+    gradient.addColorStop(0,'#0B1930');gradient.addColorStop(1,'#07121F');
+    ctx.fillStyle=gradient;ctx.fillRect(0,0,1080,1350);
+    roundedTicketRect_(ctx,24,24,1032,1302,48);
+    ctx.strokeStyle='#2A3C4F';ctx.lineWidth=3;ctx.stroke();
+    const logo=await loadTicketLogo_();
+    if(logo){
+      const scale=Math.min(385/logo.naturalWidth,430/logo.naturalHeight);
+      const w=logo.naturalWidth*scale,h=logo.naturalHeight*scale;
+      ctx.drawImage(logo,(1080-w)/2,57+(430-h)/2,w,h);
+    } else {
+      ctx.fillStyle='#E8BC65';ctx.textAlign='center';ctx.font='bold 66px Georgia,serif';
+      ctx.fillText('FERNANDO RD',540,280);
+      ctx.font='35px Georgia,serif';ctx.fillText('BARBER',540,333);
+    }
+    ctx.beginPath();ctx.arc(540,542,61,0,Math.PI*2);
+    ctx.fillStyle='#12382F';ctx.fill();ctx.strokeStyle='#337C64';ctx.lineWidth=3;ctx.stroke();
+    ctx.strokeStyle='#A8EFD1';ctx.lineWidth=12;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(511,545);ctx.lineTo(531,566);ctx.lineTo(571,519);ctx.stroke();
+    ctx.textAlign='center';ctx.fillStyle='#FFFFFF';ctx.font='bold 63px Arial, sans-serif';
+    ctx.fillText('Cita agendada',540,669);
+    ctx.fillStyle='#A8B6C9';ctx.font='31px Arial, sans-serif';
+    ctx.fillText('Tu cita quedó registrada correctamente.',540,721);
+    drawTicketRow_(ctx,'Servicio',booking.service,771);
+    drawTicketRow_(ctx,'Fecha',formatDate(booking.date),897);
+    drawTicketRow_(ctx,'Hora',formatTime(booking.time),1023);
+    drawTicketRow_(ctx,'Nombre',booking.name,1149);
+    ctx.fillStyle='#D7B566';ctx.textAlign='center';ctx.font='24px Arial, sans-serif';
+    ctx.fillText('FERNANDO RD BARBER',540,1301);
+    return new Promise((resolve,reject)=>{
+      if(canvas.toBlob){
+        canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('No se pudo exportar el ticket.')),'image/png');
+      }else{
+        try {
+          const data=canvas.toDataURL('image/png');
+          const binary=atob(data.split(',')[1]);const bytes=new Uint8Array(binary.length);
+          for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+          resolve(new Blob([bytes],{type:'image/png'}));
+        }catch(e){reject(e);}
+      }
+    });
+  }
+
+  async function makeTicketFile_(){
+    if(!lastBooking) throw new Error('Primero confirma una cita para obtener tu ticket.');
+    const booking={...lastBooking};
+    const blob=await createTicketBlob_(booking);
+    return {blob,fileName:ticketFileName_(booking)};
+  }
+
+  function getPreparedTicket_(){
+    if(!preparedTicketPromise_) preparedTicketPromise_=makeTicketFile_();
+    return preparedTicketPromise_;
+  }
+
+  function prepareTicketAfterSuccess_(){
+    const save=document.getElementById('saveTicketBtn');
+    const share=document.getElementById('shareTicketBtn');
+    if(save)save.disabled=true;
+    if(share)share.disabled=true;
+    // El trabajo de imagen empieza DESPUÉS de mostrar la confirmación,
+    // nunca aumenta el tiempo de registro reportado por Apps Script.
+    window.setTimeout(()=>{
+      const task=getPreparedTicket_();
+      task.then(()=>{
+        if(preparedTicketPromise_!==task)return;
+        if(save)save.disabled=false;
+        if(share)share.disabled=false;
+      }).catch(()=>{
+        if(preparedTicketPromise_!==task)return;
+        preparedTicketPromise_=null;
+        if(save)save.disabled=false;
+        if(share)share.disabled=false;
+      });
+    },0);
+  }
+
+  async function saveAppointmentTicket(){
+    const btn=document.getElementById('saveTicketBtn');
+    if(btn) btn.disabled=true;
+    setTicketStatus_('Preparando ticket...');
+    try {
+      const {blob,fileName}=await getPreparedTicket_();
+      if(generatedTicketUrl_)URL.revokeObjectURL(generatedTicketUrl_);
+      generatedTicketUrl_=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=generatedTicketUrl_;a.download=fileName;
+      document.body.appendChild(a);a.click();a.remove();
+      // En Safari iOS la descarga puede ir a Archivos. El enlace de vista previa
+      // permite abrir la imagen y usar Compartir > Guardar imagen.
+      const preview=document.getElementById('ticketPreviewLink');
+      if(preview){preview.href=generatedTicketUrl_;preview.hidden=false;}
+      setTicketStatus_('Ticket preparado. Si no se descargó, toca «Ver imagen» para guardarlo.');
+    }catch(err){setTicketStatus_(err.message||'No se pudo generar el ticket.',true);}
+    finally {if(btn)btn.disabled=false;}
+  }
+
+  async function shareAppointmentTicket(){
+    const btn=document.getElementById('shareTicketBtn');
+    if(btn) btn.disabled=true;
+    setTicketStatus_('Preparando imagen para compartir...');
+    try {
+      const {blob,fileName}=await getPreparedTicket_();
+      const file=new File([blob],fileName,{type:'image/png'});
+      if(!navigator.share || !navigator.canShare || !navigator.canShare({files:[file]})){
+        setTicketStatus_('Compartir archivos no está disponible en este navegador. Usa «Guardar ticket».',true);
+        return;
+      }
+      await navigator.share({files:[file],title:'Recordatorio de cita - Fernando RD Barber'});
+      setTicketStatus_('Imagen compartida o guardada desde el menú del dispositivo.');
+    }catch(err){
+      if(err && err.name==='AbortError') setTicketStatus_('Compartir cancelado.');
+      else setTicketStatus_('No se pudo compartir. Puedes usar «Guardar ticket».',true);
+    }finally{if(btn)btn.disabled=false;}
+  }
+
+  function resetTicketPreview_(){
+    preparedTicketPromise_=null;
+    const preview=document.getElementById('ticketPreviewLink');
+    if(preview){preview.hidden=true;preview.removeAttribute('href');}
+    if(generatedTicketUrl_){URL.revokeObjectURL(generatedTicketUrl_);generatedTicketUrl_='';}
+    setTicketStatus_('');
   }
 
   function editLastAppointment(){
@@ -821,6 +1035,7 @@ let selectedTime = '';
   }
 
   function resetBookingForm(){
+    resetTicketPreview_();
     // Evita que una respuesta pendiente vuelva a pintar el formulario reiniciado.
     availabilityRequestSeq++;
     selectedTime = '';

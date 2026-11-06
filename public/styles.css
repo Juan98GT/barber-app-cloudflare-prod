@@ -380,6 +380,24 @@
 
 
 
+/* V1.3.3: actualización discreta de horarios sin recargar toda la página. */
+.availability-title{min-width:0}
+.availability-refresh{
+  flex:0 0 auto;
+  margin-left:auto;
+  padding:7px 9px;
+  border:1px solid rgba(212,175,55,.38);
+  border-radius:10px;
+  background:rgba(212,175,55,.06);
+  color:var(--gold2);
+  font-size:12px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.availability-refresh:hover{background:rgba(212,175,55,.12)}
+.availability-refresh:focus-visible{outline:2px solid var(--gold2);outline-offset:2px}
+@media(max-width:380px){.availability-title{font-size:16px}.availability-refresh{font-size:11px;padding:6px 7px}}
+
 /* V1.3: calendario controlado, sin campo de fecha editable en Android/iOS. */
 .date-picker-wrap{position:relative;min-width:0}
 .date-picker-button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:51px;text-align:left;padding:13px 14px;border-radius:14px;background:#061321;border:1px solid var(--line);color:var(--text)}

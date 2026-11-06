@@ -1,4 +1,4 @@
-const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-3-2-rendimiento-ticket';
+const BARBER_DIAGNOSTIC_VERSION = 'prod-v1-3-3-sincronizacion-horarios';
 
 // ============================================================
 // REDES SOCIALES · PEGA AQUÍ LOS ENLACES DE FERNANDO
@@ -65,6 +65,7 @@ let selectedTime = '';
   let preferredEditTime = '';
   let availabilityRequestSeq = 0;
   let confirmedAvailabilityKey = '';
+  let lastAvailabilityCheckAt = 0; // evitar refrescos automáticos reiterados
   let bookingInFlight = false;
   let pendingBookingAttempt = null;
   let bookingNeedsRecovery = false;
@@ -155,6 +156,7 @@ let selectedTime = '';
       `Transporte/redirect Google aprox.: ${transportMs ?? '-'} ms`,
       `Apps Script total: ${a.appsScriptTotalMs ?? '-'} ms`,
       `  Citas/Sheets: ${a.appointmentsReadMs ?? '-'} ms (${a.appointmentsCache || '-'})`,
+      `  Espera caché disponibilidad: ${a.appointmentsCacheLockWaitMs ?? '-'} ms`,
       `  Horario: ${a.scheduleMs ?? '-'} ms`,
       `  Extraordinarios: ${a.extraHoursMs ?? '-'} ms`,
       `  Bloqueos: ${a.blocksMs ?? '-'} ms`,
@@ -448,6 +450,12 @@ let selectedTime = '';
     initSocialLinks();
     document.getElementById('service').addEventListener('change', onServiceChange);
     setupDateCalendar_();
+    // Sin sondeo periódico: refrescar solo cuando la pestaña vuelve a estar
+    // visible y la persona aún no eligió un horario.
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState==='visible') maybeRefreshAvailableTimes_();
+    });
+    window.addEventListener('focus',maybeRefreshAvailableTimes_);
     document.getElementById('phone').addEventListener('input', enforcePhoneDigits);
     setupFloatingBrand();
 
@@ -538,10 +546,26 @@ let selectedTime = '';
     section.hidden = !visible;
   }
 
+  function refreshAvailableTimes(){
+    if(bookingInFlight||bookingNeedsRecovery) return;
+    if(document.getElementById('bookingFormView').style.display==='none') return;
+    if(!document.getElementById('service').value || !document.getElementById('date').value) return;
+    loadDateInfo(); // limpia una hora seleccionada y comprueba la fecha completa
+  }
+
+  function maybeRefreshAvailableTimes_(){
+    if(bookingInFlight||bookingNeedsRecovery||selectedSlot) return;
+    if(document.getElementById('bookingFormView').style.display==='none') return;
+    if(!document.getElementById('service').value || !document.getElementById('date').value) return;
+    if(Date.now()-lastAvailabilityCheckAt<60000) return;
+    refreshAvailableTimes();
+  }
+
   function loadDateInfo(){
     // Cada consulta recibe un identificador. Si el usuario cambia de fecha o servicio
     // antes de que responda el servidor, las respuestas anteriores se descartan.
     const requestId = ++availabilityRequestSeq;
+    lastAvailabilityCheckAt=Date.now();
     selectedTime = '';
     selectedSlot = null;
     confirmedAvailabilityKey = '';

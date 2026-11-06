@@ -378,3 +378,27 @@
 }
 @media(prefers-reduced-motion:reduce){.availability-section{animation:none}}
 
+
+
+/* V1.3: calendario controlado, sin campo de fecha editable en Android/iOS. */
+.date-picker-wrap{position:relative;min-width:0}
+.date-picker-button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:51px;text-align:left;padding:13px 14px;border-radius:14px;background:#061321;border:1px solid var(--line);color:var(--text)}
+.date-picker-button:focus-visible,.date-calendar button:focus-visible{outline:2px solid var(--gold2);outline-offset:2px}
+.date-picker-button:disabled{opacity:.55}
+.date-picker-icon{font-size:23px;color:var(--gold2);line-height:1}
+.date-calendar[hidden]{display:none!important}
+.date-calendar{position:absolute;top:calc(100% + 7px);left:0;width:min(100%,370px);z-index:35;background:#0b1d30;border:1px solid rgba(212,175,55,.35);border-radius:17px;box-shadow:0 18px 38px rgba(0,0,0,.68);padding:13px}
+.date-calendar-header{display:grid;grid-template-columns:42px minmax(0,1fr) 42px;align-items:center;gap:8px;text-align:center;margin-bottom:10px}
+.date-calendar-header strong{font-size:15px;color:#fff}
+.date-calendar-nav{min-height:39px;border-radius:10px;border:1px solid var(--line);color:#fff;background:#112a44;font-size:26px}
+.date-calendar-weekdays,.date-calendar-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;text-align:center}
+.date-calendar-weekdays{margin-bottom:6px;color:#a7bdd4;font-size:12px;font-weight:800}
+.date-calendar-weekdays span{padding:5px 0}
+.date-calendar-day{min-width:0;min-height:40px;border:1px solid transparent;border-radius:10px;color:#eef5fd;background:#12304c;font-weight:700;font-size:13px;padding:0}
+.date-calendar-day:not(:disabled):hover{border-color:var(--gold2);background:#1b4164}
+.date-calendar-day:disabled{opacity:.28;cursor:default}
+.date-calendar-day.is-today{border-color:rgba(212,175,55,.54)}
+.date-calendar-day.is-selected{background:linear-gradient(145deg,var(--blue2),#174c91);border-color:var(--gold);color:#fff}
+.date-calendar-empty{min-height:40px}
+.date-calendar-close{width:100%;margin-top:12px;padding:9px;border:1px solid var(--line);border-radius:11px;color:#d8e6f5;background:#0c243b;font-size:13px}
+@media(max-width:390px){.date-calendar{padding:9px}.date-calendar-days,.date-calendar-weekdays{gap:2px}.date-calendar-day{min-height:37px}}

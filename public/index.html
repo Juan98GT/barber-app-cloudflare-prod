@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Fernando RD Barber | Reserva tu cita</title>
-  <link rel="stylesheet" href="/styles.css?v=prod-v1-2-horarios">
+  <link rel="stylesheet" href="/styles.css?v=prod-v1-3-estabilidad">
 </head>
 <body>
   <header id="floatingBrand" class="floating-brand" aria-hidden="true">
@@ -45,8 +45,24 @@
         </div>
 
         <div class="field" style="margin-top:16px">
-          <label for="date">Fecha</label>
-          <input id="date" type="date" autocomplete="off" disabled>
+          <label for="datePickerButton">Fecha</label>
+          <!-- El valor real no es editable; solo el calendario puede modificarlo. -->
+          <input id="date" type="hidden">
+          <div class="date-picker-wrap" id="datePickerWrap">
+            <button type="button" id="datePickerButton" class="date-picker-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="dateCalendar" disabled>
+              <span id="datePickerText">Selecciona una fecha</span><span aria-hidden="true" class="date-picker-icon">▦</span>
+            </button>
+            <div id="dateCalendar" class="date-calendar" role="dialog" aria-label="Selecciona la fecha de tu cita" hidden>
+              <div class="date-calendar-header">
+                <button type="button" id="calendarPrev" class="date-calendar-nav" aria-label="Mes anterior">‹</button>
+                <strong id="calendarTitle" aria-live="polite"></strong>
+                <button type="button" id="calendarNext" class="date-calendar-nav" aria-label="Mes siguiente">›</button>
+              </div>
+              <div class="date-calendar-weekdays" aria-hidden="true"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+              <div id="calendarDays" class="date-calendar-days"></div>
+              <button type="button" id="calendarClose" class="date-calendar-close">Cerrar calendario</button>
+            </div>
+          </div>
           <div id="dateStatus" class="availability-note" aria-live="polite" aria-atomic="true"></div>
         </div>
 
@@ -133,6 +149,6 @@
     <footer class="footer">Fernando RD Barber · Agenda de citas</footer>
   </main>
 
-<script src="/app.js?v=prod-v1-2-horarios"></script>
+<script src="/app.js?v=prod-v1-3-estabilidad"></script>
 </body>
 </html>

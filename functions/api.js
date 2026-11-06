@@ -1,6 +1,6 @@
-const PUBLIC_CONFIG_CACHE_FRESH_MS = 5 * 60 * 1000;
-const PUBLIC_CONFIG_CACHE_KEEP_SECONDS = 24 * 60 * 60;
-const PUBLIC_CONFIG_CACHE_VERSION = 'v4';
+const PUBLIC_CONFIG_CACHE_FRESH_MS = 2 * 60 * 1000;
+const PUBLIC_CONFIG_CACHE_KEEP_SECONDS = 20 * 60;
+const PUBLIC_CONFIG_CACHE_VERSION = 'v13';
 
 export async function onRequestPost(context) {
   const proxyStarted = Date.now();
@@ -24,6 +24,7 @@ export async function onRequestPost(context) {
       'warmAvailabilityCache',
       'getEditableAvailability',
       'createAppointment',
+      'getBookingAttemptStatus',
       'updatePublicAppointment'
     ]);
 
@@ -117,7 +118,7 @@ export function onRequestGet() {
   return json({
     ok: true,
     service: 'Barber App Cloudflare API PROD',
-    diagnostics: 'prod-v1-v4-public-config-edge'
+    diagnostics: 'prod-v1-3-estabilidad'
   });
 }
 

@@ -402,3 +402,13 @@
 .date-calendar-empty{min-height:40px}
 .date-calendar-close{width:100%;margin-top:12px;padding:9px;border:1px solid var(--line);border-radius:11px;color:#d8e6f5;background:#0c243b;font-size:13px}
 @media(max-width:390px){.date-calendar{padding:9px}.date-calendar-days,.date-calendar-weekdays{gap:2px}.date-calendar-day{min-height:37px}}
+
+
+/* V1.3.2: ticket opcional, generado localmente después de la confirmación. */
+.success-ticket-actions{width:100%;display:grid;grid-template-columns:1fr;gap:10px;margin-top:8px}
+@media(min-width:520px){.success-ticket-actions{grid-template-columns:1fr 1fr}}
+.success-ticket-actions button{min-width:0}
+.ticket-status{min-height:16px;margin:0;width:100%;text-align:center;font-size:12px;color:#a8cdbd;line-height:1.45}
+.ticket-status.error{color:#f2a7a7}
+.ticket-preview-link{font-size:13px;color:var(--gold2);text-decoration:underline;text-underline-offset:3px}
+.ticket-preview-link[hidden]{display:none!important}
